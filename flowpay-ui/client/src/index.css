@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+:root { --radius: .85rem; --background: oklch(0.99 0.004 260); --foreground: oklch(0.22 0.025 260); --card: oklch(1 0 0); --card-foreground: oklch(0.22 0.025 260); --popover: oklch(1 0 0); --popover-foreground: oklch(0.22 0.025 260); --primary: oklch(.36 .07 255); --primary-foreground: oklch(1 0 0); --secondary: oklch(.96 .01 260); --secondary-foreground: oklch(.35 .03 260); --muted: oklch(.96 .01 260); --muted-foreground: oklch(.58 .03 260); --accent: oklch(.96 .01 260); --accent-foreground: oklch(.22 .025 260); --destructive: oklch(.55 .2 25); --destructive-foreground: oklch(1 0 0); --border: oklch(.91 .015 260); --input: oklch(.91 .015 260); --ring: oklch(.48 .07 255); }
+
+* { box-sizing: border-box; }
+html { background: #fbfcfe; }
+body { margin: 0; min-width: 320px; background: #fbfcfe; color: #101828; font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid rgba(36,59,92,.5); outline-offset: 3px; }
+.font-display { font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif; }
+.font-mono { font-family: 'DM Mono', ui-monospace, monospace; }
+.header-link { border-radius: 9px; padding: 9px 12px; font-size: 12px; font-weight: 600; color: #667085; transition: .18s ease; }
+.header-link:hover { color: #344054; background: #f8f8fb; }
+.header-link.active { color: #243B5C; background: #EFF3F7; }
+.soft-card { box-shadow: 0 7px 20px rgba(16,24,40,.035); }
+.primary { background: #243B5C; color: white; box-shadow: 0 7px 16px rgba(36,59,92,.16); transition: .18s ease; }
+.primary:hover { background: #192B45; transform: translateY(-1px); }
+.primary:active, .danger:active { transform: scale(.98); }
+.danger { background: #fff1f2; color: #c33b49; border: 1px solid #f9d3d8; transition: .18s ease; }
+.danger:hover { background: #ffe5e8; }
+.eyebrow { color: #243B5C; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.page-title { margin-top: 8px; color: #101828; font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700; letter-spacing: -.06em; line-height: 1.1; }
+.page-subtitle { margin-top: 8px; color: #667085; font-size: 14px; line-height: 1.5; }
+.section-title { color: #101828; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -.035em; }
+.section-note { margin-top: 5px; color: #98a2b3; font-size: 11px; }
+.label { color: #98a2b3; font-size: 10px; }
+.value { margin-top: 5px; color: #344054; font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; }
+.value small { color: #98a2b3; font-family: 'Space Grotesk', sans-serif; font-size: 9px; }
+.field-label { display: block; margin-bottom: 8px; color: #475467; font-size: 11px; font-weight: 700; }
+.field-input { height: 44px; border: 1px solid #dfe3ec; border-radius: 11px; background: white; padding: 0 13px; color: #344054; font-size: 12px; outline: none; transition: .18s ease; }
+.field-input::placeholder { color: #b4bbc8; }
+.field-input:focus { border-color: #A9B9CF; box-shadow: 0 0 0 3px rgba(36,59,92,.08); }
+.role-tab { border-radius: 8px; padding: 8px 11px; color: #667085; font-size: 10px; font-weight: 700; transition: .18s ease; }
+.role-tab.selected { background: #EEF2F7; color: #243B5C; }
+.metric { border-radius: 12px; border: 1px solid #eef0f4; background: #fafbfc; padding: 13px; }
+.metric span { display: block; color: #98a2b3; font-size: 10px; }
+.metric strong { display: block; margin-top: 7px; color: #344054; font-family: 'DM Mono', monospace; font-size: 11px; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(16,24,40,.35); padding: 16px; backdrop-filter: blur(5px); }
+@media (max-width: 640px) { .page-title { font-size: 30px; } .header-link { padding-inline: 9px; } }
