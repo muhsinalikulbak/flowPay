@@ -212,6 +212,9 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      // Single source of truth for the on-chain deployment lives in the
+      // sibling Foundry project, not in this repo. Imported, never copied.
+      "@deployment": path.resolve(import.meta.dirname, "..", "back", "deployment.json"),
     },
   },
   envDir: path.resolve(import.meta.dirname),
@@ -235,6 +238,9 @@ export default defineConfig({
     ],
     fs: {
       strict: true,
+      // back/deployment.json resolves outside the Vite root (client/), so the
+      // parent directory has to be readable or dev requests 403 on it.
+      allow: [path.resolve(import.meta.dirname, "..")],
       deny: ["**/.*"],
     },
   },
