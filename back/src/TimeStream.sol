@@ -11,10 +11,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  *
  * A client escrows `totalAmount` of an ERC-20 up front, the freelancer accepts
  * the job (which starts the clock), and payment accrues linearly with time.
- * The freelancer must `checkIn` at least once per `checkInInterval` seconds to
- * keep accruing; otherwise earnings are capped at `lastCheckIn + checkInInterval`.
- * That is what makes this a *streaming* payment rather than a plain vesting
- * schedule: a silent freelancer stops being paid.
+ * There is no heartbeat: earnings accrue purely with wall time, and the client
+ * remains free to `stopStream` at any moment. See the design note on check-ins
+ * below the accrual formula for why.
  *
  * Accounting is fully per-stream. The contract holds the pooled balance of
  * every stream, so nothing here may read `token.balanceOf(address(this))` to
@@ -39,15 +38,13 @@ contract TimeStream {
         uint256 withdrawn;
         bool active;
         bool accepted;
-        uint256 lastCheckIn;
-        uint256 checkInInterval;
     }
 
     /// @notice Auto-incrementing id of the next stream. The first stream is id 0.
     uint256 public nextStreamId;
 
     /// @dev Duration in seconds, kept out of `Stream` to preserve the exact
-    ///      11-field layout. It is only needed at accept time, because
+    ///      9-field layout. It is only needed at accept time, because
     ///      `endTime` cannot be derived before `startTime` exists.
     mapping(uint256 streamId => uint256 durationSeconds) public streamDuration;
 
@@ -63,11 +60,9 @@ contract TimeStream {
         address indexed freelancer,
         address token,
         uint256 totalAmount,
-        uint256 durationSeconds,
-        uint256 checkInIntervalSeconds
+        uint256 durationSeconds
     );
     event StreamAccepted(uint256 indexed streamId, uint256 startTime, uint256 endTime);
-    event CheckedIn(uint256 indexed streamId, uint256 lastCheckIn);
     event Withdrawn(uint256 indexed streamId, uint256 amount);
     event StreamStopped(uint256 indexed streamId, uint256 refundToClient);
 
@@ -78,7 +73,6 @@ contract TimeStream {
     error ZeroAddress();
     error ZeroAmount();
     error ZeroDuration();
-    error ZeroCheckInInterval();
     error NotClient(uint256 streamId, address caller);
     error NotFreelancer(uint256 streamId, address caller);
     error StreamAlreadyAccepted(uint256 streamId);
@@ -116,13 +110,11 @@ contract TimeStream {
         address freelancer,
         address token,
         uint256 totalAmount,
-        uint256 durationSeconds,
-        uint256 checkInIntervalSeconds
+        uint256 durationSeconds
     ) external returns (uint256 streamId) {
         if (freelancer == address(0) || token == address(0)) revert ZeroAddress();
         if (totalAmount == 0) revert ZeroAmount();
         if (durationSeconds == 0) revert ZeroDuration();
-        if (checkInIntervalSeconds == 0) revert ZeroCheckInInterval();
 
         streamId = nextStreamId++;
         streamDuration[streamId] = durationSeconds;
@@ -134,16 +126,13 @@ contract TimeStream {
         s.totalAmount = totalAmount;
         s.active = true;
         s.accepted = false;
-        s.checkInInterval = checkInIntervalSeconds;
-        // startTime / endTime / lastCheckIn stay 0 until acceptStream().
+        // startTime / endTime stay 0 until acceptStream().
 
         // Interaction last: the stream row is already fully populated, and the
         // whole transaction reverts anyway if the transfer fails.
         IERC20(token).safeTransferFrom(msg.sender, address(this), totalAmount);
 
-        emit StreamCreated(
-            streamId, msg.sender, freelancer, token, totalAmount, durationSeconds, checkInIntervalSeconds
-        );
+        emit StreamCreated(streamId, msg.sender, freelancer, token, totalAmount, durationSeconds);
     }
 
     /// @notice Freelancer accepts the job. Starts the clock.
@@ -158,27 +147,23 @@ contract TimeStream {
         s.accepted = true;
         s.startTime = startTime;
         s.endTime = endTime;
-        s.lastCheckIn = startTime;
 
         emit StreamAccepted(streamId, startTime, endTime);
     }
 
-    /// @notice Freelancer confirms they are still working, un-capping accrual.
-    function checkIn(uint256 streamId) external onlyFreelancer(streamId) {
-        Stream storage s = _streams[streamId];
-        if (!s.accepted) revert StreamNotAccepted(streamId);
-        if (!s.active) revert StreamNotActive(streamId);
-
-        s.lastCheckIn = block.timestamp;
-
-        emit CheckedIn(streamId, block.timestamp);
-    }
-
     /**
      * @notice Amount currently withdrawable by the freelancer.
-     * @dev Accrual stops at the earliest of: now, `lastCheckIn + checkInInterval`,
-     *      and `endTime`. Already-withdrawn principal is subtracted, so this is
-     *      the withdrawable remainder rather than the lifetime total.
+     * @dev Accrual is a pure function of wall time:
+     *
+     *        effectiveEnd = min(block.timestamp, endTime)
+     *        elapsed      = effectiveEnd > startTime ? effectiveEnd - startTime : 0
+     *        earned       = totalAmount * elapsed / duration
+     *        withdrawable = earned - withdrawn
+     *
+     *      There is deliberately no heartbeat term. See the README's design
+     *      note: an onchain check-in proved nothing about whether the work was
+     *      actually being done, it only added friction, and the client can
+     *      already cut a stream off at any time with `stopStream`.
      */
     function earnedAmount(uint256 streamId) public view returns (uint256) {
         Stream storage s = _streams[streamId];
@@ -188,13 +173,7 @@ contract TimeStream {
         uint256 duration = streamDuration[streamId];
         if (duration == 0) return 0;
 
-        // Saturating add so an absurdly large checkInInterval cannot overflow.
-        uint256 checkInDeadline = s.lastCheckIn > type(uint256).max - s.checkInInterval
-            ? type(uint256).max
-            : s.lastCheckIn + s.checkInInterval;
-
         uint256 effectiveEnd = block.timestamp;
-        if (checkInDeadline < effectiveEnd) effectiveEnd = checkInDeadline;
         if (s.endTime < effectiveEnd) effectiveEnd = s.endTime;
 
         uint256 elapsed = effectiveEnd > s.startTime ? effectiveEnd - s.startTime : 0;
@@ -262,9 +241,7 @@ contract TimeStream {
             uint256 endTime,
             uint256 withdrawn,
             bool active,
-            bool accepted,
-            uint256 lastCheckIn,
-            uint256 checkInInterval
+            bool accepted
         )
     {
         Stream storage s = _streams[streamId];
@@ -277,9 +254,7 @@ contract TimeStream {
             s.endTime,
             s.withdrawn,
             s.active,
-            s.accepted,
-            s.lastCheckIn,
-            s.checkInInterval
+            s.accepted
         );
     }
 

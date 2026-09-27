@@ -3,10 +3,10 @@
 Second-granular streaming payment escrow for freelance work, on **Monad testnet**.
 
 A client locks up the full fee in an ERC-20 up front. The freelancer accepts the
-job, which starts the clock, and payment accrues linearly with wall time. The
-freelancer has to `checkIn` at least once per `checkInInterval` seconds to keep
-accruing — that heartbeat is what makes this *streaming* rather than a plain
-vesting schedule. Go silent and you stop being paid.
+job, which starts the clock, and payment accrues linearly with wall time. There
+is no heartbeat to send and nothing to keep alive — if the freelancer goes quiet
+the money keeps accruing. Stopping early is the client's call, via
+`stopStream`, at any second.
 
 - **Contract:** [`src/TimeStream.sol`](src/TimeStream.sol)
 - **Network:** Monad Testnet — chain id `10143`
@@ -21,10 +21,9 @@ vesting schedule. Go silent and you stop being paid.
 | Step | Actor | Call | Effect |
 | --- | --- | --- | --- |
 | 1 | client | `createStream(...)` | Escrows `totalAmount` via `transferFrom`. Clock not started. |
-| 2 | freelancer | `acceptStream(id)` | Starts the clock: `startTime = now`, `endTime = now + duration`, `lastCheckIn = now`. |
-| 3 | freelancer | `checkIn(id)` | Resets the accrual cap to `now`. Repeat every `checkInInterval`. |
-| 4 | freelancer | `withdraw(id)` | Pulls everything accrued so far (net of what was already withdrawn). |
-| 5 | client | `stopStream(id)` | Optional early exit. Pays the freelancer what accrued, refunds the rest. |
+| 2 | freelancer | `acceptStream(id)` | Starts the clock: `startTime = now`, `endTime = now + duration`. |
+| 3 | freelancer | `withdraw(id)` | Pulls everything accrued so far (net of what was already withdrawn). |
+| 4 | client | `stopStream(id)` | Optional early exit. Pays the freelancer what accrued, refunds the rest. |
 
 Nothing is earned before `acceptStream`, and a stream the freelancer never
 accepts is fully refundable by the client at any time.
@@ -32,14 +31,14 @@ accepts is fully refundable by the client at any time.
 ### Accrual formula
 
 ```
-effectiveEnd = min(block.timestamp, lastCheckIn + checkInInterval, endTime)
+effectiveEnd = min(block.timestamp, endTime)
 elapsed      = effectiveEnd > startTime ? effectiveEnd - startTime : 0
 earned       = totalAmount * elapsed / duration
 withdrawable = earned - withdrawn
 ```
 
-The `lastCheckIn + checkInInterval` term is the heartbeat cap. Without it,
-`effectiveEnd` would simply be `min(now, endTime)`.
+There is no third term clamping `effectiveEnd`. See *Why there is no check-in*
+below.
 
 ---
 
@@ -47,18 +46,17 @@ The `lastCheckIn + checkInInterval` term is the heartbeat cap. Without it,
 
 | Function | Caller | Notes |
 | --- | --- | --- |
-| `createStream(freelancer, token, totalAmount, durationSeconds, checkInIntervalSeconds) → streamId` | client | Pulls `totalAmount` with `transferFrom`; the client must approve first. |
+| `createStream(freelancer, token, totalAmount, durationSeconds) → streamId` | client | Pulls `totalAmount` with `transferFrom`; the client must approve first. |
 | `acceptStream(streamId)` | freelancer | Starts the clock. Reverts if already accepted or stopped. |
-| `checkIn(streamId)` | freelancer | Requires `accepted && active`. |
 | `earnedAmount(streamId) → uint256` | anyone | Withdrawable remainder, already net of `withdrawn`. `0` before accept. |
 | `withdraw(streamId) → amount` | freelancer | Reverts `NothingToWithdraw` if nothing accrued. |
 | `stopStream(streamId) → refundToClient` | client | Pays freelancer + refunds client, sets `active = false`. |
-| `getStream(streamId)` | anyone | All 11 fields, in declaration order. |
+| `getStream(streamId)` | anyone | All 9 fields, in declaration order. |
 | `streamDuration(streamId)` / `streamCount()` | anyone | Duration seconds; number of streams created. |
 
 ### Events
 
-`StreamCreated`, `StreamAccepted`, `CheckedIn`, `Withdrawn`, `StreamStopped`.
+`StreamCreated`, `StreamAccepted`, `Withdrawn`, `StreamStopped`.
 
 Each carries `streamId` as its first `indexed` field, so an activity feed can
 filter by stream without decoding every log.
@@ -84,9 +82,9 @@ another stream's escrow. `stopStream` derives the refund from the stream's own
 fields: `totalAmount - (withdrawn + amountFreelancer)`. Integer-rounding dust
 therefore stays with the client rather than getting stuck in the contract.
 
-**Overflow.** `Math.mulDiv` does the accrual multiply in 512-bit, and
-`lastCheckIn + checkInInterval` uses a saturating add, so neither a large
-`totalAmount` nor an absurd `checkInInterval` can overflow.
+**Overflow.** `Math.mulDiv` does the accrual multiply in 512-bit, so a large
+`totalAmount` cannot overflow the calculation. `endTime` is `startTime +
+duration` and both are bounded by the caller-supplied `durationSeconds`.
 
 **Keys.** No private key is read from an environment variable, a file, or a
 constructor argument anywhere in this repo. See *Deploying* below.
@@ -101,9 +99,36 @@ forge test -vv
 ```
 
 17 tests, all passing. Coverage includes the full
-`create → accept → warp → withdraw → stop` lifecycle, the check-in cap, access
-control on every role-restricted function, validation rejects, and
-multi-stream escrow isolation.
+`create → accept → warp → withdraw → stop` lifecycle, the fact that accrual does
+**not** cap while the freelancer is silent, the `endTime` ceiling, access
+control on every role-restricted function, validation rejects, and multi-stream
+escrow isolation.
+
+---
+
+## Why there is no check-in
+
+> **Design note.** Earlier revisions of this contract required the freelancer to
+> call `checkIn` at least once per `checkInInterval` seconds, and capped earnings
+> at `lastCheckIn + checkInInterval` otherwise. That mechanism has been
+> **removed** — `checkIn()`, `CheckedIn`, `lastCheckIn`, `checkInInterval` and
+> the `checkInIntervalSeconds` argument to `createStream` no longer exist, and
+> `earnedAmount` is now a pure function of wall time.
+>
+> The reason is that it was solving a trust problem it could not actually
+> solve. A heartbeat only proves that *someone* touched a button on a
+> schedule; it says nothing about whether the work was being done. Whether a
+> freelancer is delivering is a matter of human relationships and ongoing
+> communication between the two parties — a mechanism that cannot observe that
+> adds no guarantee, it only adds friction: a mandatory transaction on a
+> deadline, a failed wallet or a lost key silently freezing someone's pay, and
+> a whole class of support questions about money that has stopped moving.
+>
+> The real protection was never the heartbeat. The client can `stopStream` at
+> any instant and take back everything that has not accrued yet, which is a
+> stronger and more direct guarantee than an absence-of-signal check, and it
+> costs the freelancer nothing to keep. So the heartbeat went, and the
+> protection stayed.
 
 ---
 
@@ -202,7 +227,7 @@ deployment.json                  generated after deploy
 ## Design notes
 
 **`streamDuration` is a separate mapping.** The stream record is the exact
-11 fields that were specified. There is no `duration` field among them, yet
+9 fields that were specified. There is no `duration` field among them, yet
 `acceptStream` must set `endTime = startTime + duration` — and `duration` cannot
 be recovered before `startTime` exists. It is therefore kept in its own public
 mapping rather than widening the struct.

@@ -15,7 +15,6 @@ contract TimeStreamTest is Test {
 
     uint256 internal constant TOTAL = 1_000e6; // 1000 USDC (6 decimals)
     uint256 internal constant DURATION = 1_000; // seconds
-    uint256 internal constant INTERVAL = 100; // seconds between check-ins
 
     function setUp() public {
         ts = new TimeStream();
@@ -34,7 +33,7 @@ contract TimeStreamTest is Test {
 
     function _create() internal returns (uint256 id) {
         vm.prank(client);
-        id = ts.createStream(freelancer, address(token), TOTAL, DURATION, INTERVAL);
+        id = ts.createStream(freelancer, address(token), TOTAL, DURATION);
     }
 
     function _createAndAccept() internal returns (uint256 id) {
@@ -59,9 +58,7 @@ contract TimeStreamTest is Test {
             uint256 endTime,
             uint256 withdrawn,
             bool active,
-            bool accepted,
-            uint256 lastCheckIn,
-            uint256 checkInInterval
+            bool accepted
         ) = ts.getStream(id);
 
         assertEq(c, client, "client");
@@ -73,8 +70,6 @@ contract TimeStreamTest is Test {
         assertEq(withdrawn, 0, "withdrawn");
         assertTrue(active, "active on create");
         assertFalse(accepted, "accepted must be false on create");
-        assertEq(lastCheckIn, 0, "lastCheckIn");
-        assertEq(checkInInterval, INTERVAL, "checkInInterval");
 
         assertEq(token.balanceOf(address(ts)), TOTAL, "escrowed");
         assertEq(token.balanceOf(client), 10_000e6 - TOTAL, "client debited");
@@ -85,19 +80,16 @@ contract TimeStreamTest is Test {
         vm.startPrank(client);
 
         vm.expectRevert(TimeStream.ZeroAddress.selector);
-        ts.createStream(address(0), address(token), TOTAL, DURATION, INTERVAL);
+        ts.createStream(address(0), address(token), TOTAL, DURATION);
 
         vm.expectRevert(TimeStream.ZeroAddress.selector);
-        ts.createStream(freelancer, address(0), TOTAL, DURATION, INTERVAL);
+        ts.createStream(freelancer, address(0), TOTAL, DURATION);
 
         vm.expectRevert(TimeStream.ZeroAmount.selector);
-        ts.createStream(freelancer, address(token), 0, DURATION, INTERVAL);
+        ts.createStream(freelancer, address(token), 0, DURATION);
 
         vm.expectRevert(TimeStream.ZeroDuration.selector);
-        ts.createStream(freelancer, address(token), TOTAL, 0, INTERVAL);
-
-        vm.expectRevert(TimeStream.ZeroCheckInInterval.selector);
-        ts.createStream(freelancer, address(token), TOTAL, DURATION, 0);
+        ts.createStream(freelancer, address(token), TOTAL, 0);
 
         vm.stopPrank();
     }
@@ -113,10 +105,9 @@ contract TimeStreamTest is Test {
         vm.prank(freelancer);
         ts.acceptStream(id);
 
-        (,,,,,,, bool active, bool accepted, uint256 lastCheckIn,) = ts.getStream(id);
+        (,,,,,,, bool active, bool accepted) = ts.getStream(id);
         assertTrue(accepted, "accepted");
         assertTrue(active, "still active");
-        assertEq(lastCheckIn, acceptedAt, "lastCheckIn seeded to startTime");
 
         (uint256 startTime, uint256 endTime) = _times(id);
         assertEq(startTime, acceptedAt, "startTime");
@@ -143,29 +134,35 @@ contract TimeStreamTest is Test {
     // 3. accrual over time
     // ------------------------------------------------------------------
 
-    function test_EarningsAccrueWithCheckIns() public {
+    function test_EarningsAccrueWithTime() public {
         uint256 id = _createAndAccept();
         uint256 t0 = block.timestamp;
 
-        vm.warp(t0 + INTERVAL);
-        vm.prank(freelancer);
-        ts.checkIn(id);
-
-        vm.warp(t0 + 2 * INTERVAL);
+        vm.warp(t0 + 200);
 
         // 200s of 1000s elapsed -> 200 USDC of 1000
         assertEq(ts.earnedAmount(id), 200e6, "accrued pro rata");
     }
 
-    function test_CheckInRequired_AccrualCapsWithoutIt() public {
+    /// @dev The heartbeat was removed on purpose, so silence must NOT cap earnings.
+    function test_EarningsDoNotCapWhileTheFreelancerIsSilent() public {
         uint256 id = _createAndAccept();
         uint256 t0 = block.timestamp;
 
-        // Freelancer goes silent for 500s without a single check-in.
+        // 500s pass with no interaction whatsoever.
         vm.warp(t0 + 500);
 
-        // Capped at lastCheckIn + INTERVAL = t0 + 100 -> 100 USDC, not 500 USDC.
-        assertEq(ts.earnedAmount(id), 100e6, "capped at one interval past last check-in");
+        assertEq(ts.earnedAmount(id), 500e6, "accrual is a pure function of wall time");
+    }
+
+    function test_EarningsCapAtEndTime() public {
+        uint256 id = _createAndAccept();
+        uint256 t0 = block.timestamp;
+
+        // Well past endTime: the stream pays out in full and no more.
+        vm.warp(t0 + DURATION * 3);
+
+        assertEq(ts.earnedAmount(id), TOTAL, "never more than totalAmount");
     }
 
     function test_CannotWithdrawBeforeAccept() public {
@@ -176,14 +173,6 @@ contract TimeStreamTest is Test {
         ts.withdraw(id);
     }
 
-    function test_CheckIn_Revert_NotAccepted() public {
-        uint256 id = _create();
-
-        vm.prank(freelancer);
-        vm.expectRevert(abi.encodeWithSelector(TimeStream.StreamNotAccepted.selector, id));
-        ts.checkIn(id);
-    }
-
     // ------------------------------------------------------------------
     // 4. withdraw
     // ------------------------------------------------------------------
@@ -192,10 +181,7 @@ contract TimeStreamTest is Test {
         uint256 id = _createAndAccept();
         uint256 t0 = block.timestamp;
 
-        vm.warp(t0 + INTERVAL);
-        vm.prank(freelancer);
-        ts.checkIn(id);
-        vm.warp(t0 + 2 * INTERVAL);
+        vm.warp(t0 + 200);
 
         uint256 expected = 200e6;
         assertEq(ts.earnedAmount(id), expected, "pre-withdraw earned");
@@ -207,7 +193,7 @@ contract TimeStreamTest is Test {
         assertEq(token.balanceOf(freelancer), expected, "freelancer paid");
         assertEq(token.balanceOf(address(ts)), TOTAL - expected, "escrow reduced");
 
-        (,,,,,, uint256 withdrawn,,,,) = ts.getStream(id);
+        (,,,,,, uint256 withdrawn,,) = ts.getStream(id);
         assertEq(withdrawn, expected, "withdrawn tracked");
 
         // Nothing left to pull until more time passes.
@@ -231,9 +217,6 @@ contract TimeStreamTest is Test {
         uint256 id = _createAndAccept();
         uint256 t0 = block.timestamp;
 
-        vm.warp(t0 + 250);
-        vm.prank(freelancer);
-        ts.checkIn(id);
         vm.warp(t0 + 300);
 
         uint256 earnedForFreelancer = 300e6;
@@ -248,7 +231,7 @@ contract TimeStreamTest is Test {
         assertEq(token.balanceOf(client), clientBefore + expectedRefund, "client refunded");
         assertEq(token.balanceOf(address(ts)), 0, "escrow fully drained");
 
-        (,,,,,, uint256 withdrawn, bool active,,,) = ts.getStream(id);
+        (,,,,,, uint256 withdrawn, bool active,) = ts.getStream(id);
         assertFalse(active, "stream closed");
         assertEq(withdrawn, TOTAL, "marked fully settled");
         assertEq(ts.earnedAmount(id), 0, "nothing left to earn");
@@ -289,16 +272,13 @@ contract TimeStreamTest is Test {
     // 6. full-length stream pays out everything
     // ------------------------------------------------------------------
 
-    function test_StreamPaysInFullWhenCheckedInToTheEnd() public {
+    function test_StreamPaysInFullWithoutAnyInteraction() public {
         uint256 id = _createAndAccept();
         uint256 t0 = block.timestamp;
 
-        // Keep checking in right up to the end so accrual is never capped.
-        for (uint256 i = 1; i <= 10; i++) {
-            vm.warp(t0 + (i * 100));
-            vm.prank(freelancer);
-            ts.checkIn(id);
-        }
+        // The freelancer does nothing at all until the end. No heartbeat, so
+        // nothing is ever capped.
+        vm.warp(t0 + DURATION);
 
         assertEq(ts.earnedAmount(id), TOTAL, "fully earned at endTime");
 
@@ -319,10 +299,6 @@ contract TimeStreamTest is Test {
 
         uint256 t0 = block.timestamp;
         vm.warp(t0 + 200);
-        vm.prank(freelancer);
-        ts.checkIn(idA);
-        vm.prank(freelancer);
-        ts.checkIn(idB);
 
         assertEq(token.balanceOf(address(ts)), 2 * TOTAL, "both escrowed");
 
@@ -344,7 +320,7 @@ contract TimeStreamTest is Test {
     // ------------------------------------------------------------------
 
     function _times(uint256 id) internal view returns (uint256 startTime, uint256 endTime) {
-        (,,,, uint256 s, uint256 e,,,,,) = ts.getStream(id);
+        (,,,, uint256 s, uint256 e,,,) = ts.getStream(id);
         return (s, e);
     }
 }
