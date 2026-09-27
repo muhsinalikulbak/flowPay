@@ -186,6 +186,33 @@ Writes `deployment.json` for the frontend team — `address`, `abi`, `chainId`,
 read from the compiled artifact and the address from forge's broadcast record,
 so the file cannot drift from what was actually deployed.
 
+It writes **two** files from one in-memory object, never building the JSON
+twice:
+
+| Path | Role |
+| --- | --- |
+| `back/deployment.json` | canonical |
+| `flowpay-ui/deployment.json` | the copy the frontend imports |
+
+The duplicate is not optional. The Vercel project is rooted at `flowpay-ui`, so a
+build there never sees `../back/` and fails to resolve an import that reaches
+outside its own directory — which is exactly how it failed before this file
+existed. The frontend therefore imports its local copy through the
+`@deployment` alias, and `flowpay-ui/scripts/check-deployment-sync.mjs` runs at
+the top of every frontend `dev` and `build`, failing the build if the two copies
+ever diverge. Re-running this script is the only way to change them; do not edit
+either file by hand.
+
+### 5. Deploy the frontend
+
+```bash
+cd ../flowpay-ui && npx vercel deploy --prod
+```
+
+`flowpay-ui/vercel.json` pins the output directory to `dist/public`. Without it
+Vercel's Vite preset serves `dist/`, whose root holds the Express bundle built
+by `esbuild`, and the site answers `/` with JavaScript source instead of the app.
+
 ---
 
 ## Test USDC
@@ -219,7 +246,8 @@ script/DeployTimeStream.s.sol    forge script, keystore-only signing
 script/gen-deployment-json.mjs   writes deployment.json
 test/TimeStream.t.sol            17 tests
 test/mocks/MockERC20.sol         unit-test token only
-deployment.json                  generated after deploy
+deployment.json                  generated after deploy (canonical)
+../flowpay-ui/deployment.json    generated copy the frontend imports
 ```
 
 ---

@@ -212,9 +212,14 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
-      // Single source of truth for the on-chain deployment lives in the
-      // sibling Foundry project, not in this repo. Imported, never copied.
-      "@deployment": path.resolve(import.meta.dirname, "..", "back", "deployment.json"),
+      // The on-chain deployment. The canonical copy is back/deployment.json,
+      // but the Vercel project is rooted here, so a build there never sees
+      // ../back/ and would fail to resolve an import that reaches outside this
+      // directory. This local copy is written by
+      // back/script/gen-deployment-json.mjs in the same write as the canonical
+      // one, and scripts/check-deployment-sync.mjs fails the build if the two
+      // ever diverge.
+      "@deployment": path.resolve(import.meta.dirname, "deployment.json"),
     },
   },
   envDir: path.resolve(import.meta.dirname),
@@ -238,8 +243,6 @@ export default defineConfig({
     ],
     fs: {
       strict: true,
-      // back/deployment.json resolves outside the Vite root (client/), so the
-      // parent directory has to be readable or dev requests 403 on it.
       allow: [path.resolve(import.meta.dirname, "..")],
       deny: ["**/.*"],
     },

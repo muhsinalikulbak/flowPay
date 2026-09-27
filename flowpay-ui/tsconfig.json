@@ -20,7 +20,7 @@
     "paths": {
       "@/*": ["./client/src/*"],
       "@shared/*": ["./shared/*"],
-      "@deployment": ["../back/deployment.json"]
+      "@deployment": ["./deployment.json"]
     }
   }
 }

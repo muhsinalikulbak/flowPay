@@ -7,8 +7,19 @@
  * Reads the compiled ABI from the forge artifact and the deployed address from
  * forge's own broadcast record, so the file can never drift from what was
  * actually deployed or from the compiled contract.
+ *
+ * It is written to two places from one in-memory object, never built twice:
+ *
+ *   1. back/deployment.json              - the canonical copy
+ *   2. flowpay-ui/deployment.json        - the copy the frontend imports
+ *
+ * The duplicate is not optional. The Vercel project is rooted at flowpay-ui, so
+ * a build there never sees ../back/ and fails to resolve the import if the
+ * frontend reaches out of its own directory. Both copies are produced here, and
+ * `flowpay-ui/scripts/check-deployment-sync.mjs` fails the frontend build if
+ * they ever diverge.
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,6 +34,7 @@ const USDC = "0x534b2f3A21130d7a60830c2Df862319e593943A3";
 const ARTIFACT = resolve(ROOT, "out/TimeStream.sol/TimeStream.json");
 const BROADCAST = resolve(ROOT, `broadcast/DeployTimeStream.s.sol/${CHAIN_ID}/run-latest.json`);
 const OUT = resolve(ROOT, "deployment.json");
+const FRONTEND_OUT = resolve(ROOT, "..", "flowpay-ui", "deployment.json");
 
 function fail(msg) {
   console.error(`error: ${msg}`);
@@ -56,9 +68,14 @@ const deployment = {
   abi,
 };
 
-writeFileSync(OUT, `${JSON.stringify(deployment, null, 2)}\n`);
+const serialised = `${JSON.stringify(deployment, null, 2)}\n`;
+
+writeFileSync(OUT, serialised);
+mkdirSync(dirname(FRONTEND_OUT), { recursive: true });
+writeFileSync(FRONTEND_OUT, serialised);
 
 console.log(`wrote ${OUT}`);
+console.log(`wrote ${FRONTEND_OUT}`);
 console.log(`  address : ${deployment.address}`);
 console.log(`  chainId : ${deployment.chainId}`);
 console.log(`  rpcUrl  : ${deployment.rpcUrl}`);
