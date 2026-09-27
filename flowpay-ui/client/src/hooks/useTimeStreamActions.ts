@@ -4,7 +4,6 @@ import type { Address, EIP1193Provider, Hash } from "viem";
 import {
   acceptStream as acceptStreamTx,
   approveUsdc,
-  checkIn as checkInTx,
   createStream as createStreamTx,
   describeError,
   readErc20Allowance,
@@ -30,7 +29,6 @@ const STEP_LABEL: Record<TxStep, string> = {
   approve: "USDC approval",
   createStream: "Stream creation",
   acceptStream: "Accepting the job",
-  checkIn: "Check-in",
   withdraw: "Withdrawal",
   stopStream: "Stopping the stream",
 };
@@ -149,12 +147,6 @@ export function useTimeStreamActions(
     [run],
   );
 
-  const checkIn = useCallback(
-    (streamId: bigint) =>
-      run("checkIn", (p, a) => checkInTx(p, a, streamId), "Checked in · accrual un-capped"),
-    [run],
-  );
-
   const withdraw = useCallback(
     (streamId: bigint) =>
       run("withdraw", (p, a) => withdrawTx(p, a, streamId), "Withdrawal confirmed"),
@@ -171,5 +163,5 @@ export function useTimeStreamActions(
     [run],
   );
 
-  return { progress, hashes, createStream, acceptStream, checkIn, withdraw, stopStream };
+  return { progress, hashes, createStream, acceptStream, withdraw, stopStream };
 }

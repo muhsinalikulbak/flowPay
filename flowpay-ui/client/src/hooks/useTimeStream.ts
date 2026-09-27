@@ -114,9 +114,9 @@ export interface StreamDetail {
 
 /**
  * Reads the stream row and then keeps `earnedAmount` fresh every second so the
- * counter reflects the contract, never a locally interpolated guess. The
- * contract caps accrual at lastCheckIn + checkInInterval, which this polling
- * is what makes visible.
+ * counter reflects the contract, never a locally interpolated guess. Accrual is
+ * a pure function of wall time, so the counter just keeps climbing until
+ * `endTime` - and this polling is what makes that visible.
  */
 export function useStreamDetail(streamId: bigint | null): StreamDetail {
   const [record, setRecord] = useState<StreamRecord | null>(null);

@@ -144,7 +144,7 @@ export async function ensureMonadNetwork(provider: EIP1193Provider): Promise<num
 // Reads
 // ---------------------------------------------------------------------------
 
-/** Mirrors the 11-field Stream struct plus the separate duration mapping. */
+/** Mirrors the 9-field Stream struct plus the separate duration mapping. */
 export interface StreamRecord {
   client: Address;
   freelancer: Address;
@@ -155,8 +155,6 @@ export interface StreamRecord {
   withdrawn: bigint;
   active: boolean;
   accepted: boolean;
-  lastCheckIn: bigint;
-  checkInInterval: bigint;
   durationSeconds: bigint;
 }
 
@@ -176,7 +174,7 @@ export async function readStream(streamId: bigint): Promise<StreamRecord> {
     }),
   ]);
 
-  const [client, freelancer, token, totalAmount, startTime, endTime, withdrawn, active, accepted, lastCheckIn, checkInInterval] = stream as readonly [
+  const [client, freelancer, token, totalAmount, startTime, endTime, withdrawn, active, accepted] = stream as readonly [
     Address,
     Address,
     Address,
@@ -186,8 +184,6 @@ export async function readStream(streamId: bigint): Promise<StreamRecord> {
     bigint,
     boolean,
     boolean,
-    bigint,
-    bigint,
   ];
 
   return {
@@ -200,8 +196,6 @@ export async function readStream(streamId: bigint): Promise<StreamRecord> {
     withdrawn,
     active,
     accepted,
-    lastCheckIn,
-    checkInInterval,
     durationSeconds: durationSeconds as bigint,
   };
 }
@@ -252,14 +246,13 @@ export async function readErc20Allowance(
 // Writes
 // ---------------------------------------------------------------------------
 
-export type TxStep = "approve" | "createStream" | "acceptStream" | "checkIn" | "withdraw" | "stopStream";
+export type TxStep = "approve" | "createStream" | "acceptStream" | "withdraw" | "stopStream";
 
 export interface CreateStreamArgs {
   freelancer: Address;
   token: Address;
   totalAmount: bigint;
   durationSeconds: bigint;
-  checkInIntervalSeconds: bigint;
 }
 
 /** Step 1 of creating a stream: let the contract pull the escrowed amount. */
@@ -289,13 +282,7 @@ export async function createStream(
     address: TIMESTREAM_ADDRESS,
     abi: TIME_STREAM_ABI,
     functionName: "createStream",
-    args: [
-      args.freelancer,
-      args.token,
-      args.totalAmount,
-      args.durationSeconds,
-      args.checkInIntervalSeconds,
-    ],
+    args: [args.freelancer, args.token, args.totalAmount, args.durationSeconds],
   });
 }
 
@@ -310,25 +297,6 @@ export async function acceptStream(
     address: TIMESTREAM_ADDRESS,
     abi: TIME_STREAM_ABI,
     functionName: "acceptStream",
-    args: [streamId],
-  });
-}
-
-/**
- * Only the freelancer may call this. Accrual stops at
- * lastCheckIn + checkInInterval, so a missed check-in silently caps earnings.
- */
-export async function checkIn(
-  provider: EIP1193Provider,
-  account: Address,
-  streamId: bigint,
-): Promise<Hash> {
-  return getWalletClient(provider).writeContract({
-    account,
-    chain: monadTestnet,
-    address: TIMESTREAM_ADDRESS,
-    abi: TIME_STREAM_ABI,
-    functionName: "checkIn",
     args: [streamId],
   });
 }
