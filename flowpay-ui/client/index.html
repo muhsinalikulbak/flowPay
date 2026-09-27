@@ -6,6 +6,27 @@
     <meta name="theme-color" content="#fbfcfe" />
     <meta name="description" content="FlowPay — Payments that flow with time." />
     <title>FlowPay — Freelance Payment Streaming</title>
+    <script>
+      // Applies data-theme before first paint. Without this the page renders in
+      // the light palette and then snaps to the stored theme once React mounts.
+      // Kept in sync with ThemeSwitcher and next-themes' "theme" storage key.
+      (function () {
+        var THEMES = { light: "#fbfcfe", sepia: "#f4ebdd", dark: "#0f1620" };
+        var theme = "light";
+        try {
+          var stored = localStorage.getItem("theme");
+          // An unrecognised stored value is treated as no preference, so the
+          // system setting wins instead of being silently pinned to light.
+          if (stored === "light" || stored === "sepia" || stored === "dark") {
+            theme = stored;
+          } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+            theme = "dark";
+          }
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", theme);
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", THEMES[theme]);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
